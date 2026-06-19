@@ -55,6 +55,10 @@ function _update(dt)
   end
 
   local normal_dvec = util.vec_normalize({ x = dx, y = dy })
+
+  -- Stop cheaters in their tracks with advanced kernel anti-cheat technique
+  -- called THE CLAMP FUNCTION
+  --
   State.player.x = util.clamp(
     speed * normal_dvec.x + State.player.x,
     0,
