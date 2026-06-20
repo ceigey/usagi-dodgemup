@@ -5,6 +5,37 @@ local fire_timer = 0
 local bullet_speed = 420 -- px/s
 local player_bullet_w = 4
 local player_bullet_h = 10
+-- "It’s the time in seconds that an enemy will flash then they’re hit by a bullet" - docs
+local hit_flash_time = 0.2 -- secs
+
+
+---@class Enemy: Usagi.Rect
+---@field x number
+---@field y number
+---@field hp number
+---@field w integer width
+---@field h integer height
+---@field speed number px/s
+---@field color integer Usagi palette colour
+---@field flash_timer integer how long left to flash for?
+
+-- Gotta init some enemies somehow
+---comment
+---@param x integer
+---@param y integer
+---@return Enemy
+local function init_enemy(x, y)
+  return {
+    x = x,
+    y = y,
+    hp = 12,
+    w = 16,
+    h = 16,
+    speed = 44, -- px/s
+    color = gfx.COLOR_RED,
+    flash_timer = 0
+  }
+end
 
 function _config()
   ---@type Usagi.Config
@@ -23,6 +54,11 @@ function _init()
       x = usagi.GAME_W / 2 - player_size / 2,
       y = usagi.GAME_H - 60,
       bullets = {},
+    },
+    enemies = {
+      init_enemy(72, -20),
+      init_enemy(usagi.GAME_W - 72, -20),
+      init_enemy(usagi.GAME_W / 2, -60),
     }
   }
 end
@@ -70,11 +106,55 @@ function _update(dt)
     -- move the bullet upward
     bullet.y -= bullet_speed * dt
 
+    -- ENEMY COLLISIONS
+    -- check if the bullet has overlapped with any of the enemies
+    for _, enemy in ipairs(State.enemies) do
+      if util.rect_overlap(
+            { x = bullet.x, y = bullet.y,
+              w = player_bullet_w, h = player_bullet_h },
+            enemy) then
+        bullet.dead = true
+        enemy.hp -= 1
+        enemy.flash_timer = hit_flash_time
+      end
+    end
+
     -- remove bullets that have flown off the top of the screen
     -- TODO: Review if/how bullet pooling can be done
-    if bullet.y < -player_bullet_h then
+    if bullet.y < -player_bullet_h or bullet.dead then
       table.remove(State.player.bullets, i)
     end
+  end
+
+  -- ENEMY MOVEMENT
+  for i = #State.enemies, 1, -1 do
+    local enemy = State.enemies[i]
+
+    enemy.y += enemy.speed * dt
+
+    if enemy.flash_timer > 0 then
+      enemy.flash_timer = enemy.flash_timer - dt
+    end
+
+    if enemy.hp <= 0 or enemy.y > usagi.GAME_H then
+      table.remove(State.enemies, i)
+    end
+  end
+
+  -- SPAWN NEW ENEMIES
+  if #State.enemies == 0 then
+    table.insert(
+      State.enemies,
+      init_enemy(72, -20)
+    )
+    table.insert(
+      State.enemies,
+      init_enemy(usagi.GAME_W - 72, -20)
+    )
+    table.insert(
+      State.enemies,
+      init_enemy(usagi.GAME_W / 2, -60)
+    )
   end
 end
 
@@ -95,6 +175,15 @@ function _draw(dt)
     State.player.x, State.player.y,
     player_size, player_size, gfx.COLOR_BLACK
   )
+
+  -- ENEMIES (order specified by tutorial)
+  for _, enemy in ipairs(State.enemies) do
+    local color = enemy.color
+    if enemy.flash_timer > 0 then
+      color = gfx.COLOR_PINK
+    end
+    gfx.rect_fill(enemy.x, enemy.y, enemy.w, enemy.h, color)
+  end
 
   -- FIRING (player!)
   for _, bullet in ipairs(State.player.bullets) do
