@@ -30,8 +30,8 @@ end
 ---update state each frame before draw
 ---@param dt integer -- delta time: seconds since last frame
 function _update(dt)
+  -- MOVEMENT
   local input_delta = { x = 0, y = 0 }
-  local blah = 1
   if input.held(input.UP) then
     input_delta.y -= 1
   end
@@ -49,14 +49,56 @@ function _update(dt)
   State.player.y += normalized_input.y * player_speed * dt
   State.player.x = util.clamp(State.player.x, 0, usagi.GAME_W - player_size)
   State.player.y = util.clamp(State.player.y, 0, usagi.GAME_H - player_size)
+
+  -- FIRING
+  fire_timer -= dt
+
+  if fire_timer <= 0 and input.held(input.BTN1) then
+    local bul_y = State.player.y - player_bullet_h
+    -- fire 3 bullets
+    table.insert(State.player.bullets,
+      { x = State.player.x - player_bullet_w, y = bul_y })
+    table.insert(State.player.bullets,
+      { x = State.player.x + player_size / 2 - player_bullet_w / 2, y = bul_y })
+    table.insert(State.player.bullets,
+      { x = State.player.x + player_size, y = bul_y })
+    fire_timer = fire_delay
+  end
+
+  for i = #State.player.bullets, 1, -1 do
+    local bullet = State.player.bullets[i]
+    -- move the bullet upward
+    bullet.y -= bullet_speed * dt
+
+    -- remove bullets that have flown off the top of the screen
+    -- TODO: Review if/how bullet pooling can be done
+    if bullet.y < -player_bullet_h then
+      table.remove(State.player.bullets, i)
+    end
+  end
 end
 
 ---draw each frame after update
 ---@param dt integer -- delta time: seconds since last frame
 function _draw(dt)
   gfx.clear(gfx.COLOR_WHITE)
+
+  -- ROUGH IDEA OF DRAW ORDER?
+  -- Should look at famous shmups to see theirs
+  -- DDP seems to have:
+  -- Enemy bullets
+  -- Player
+  -- Player bullets
+  -- enemy
+  -- bg?
   gfx.rect_fill(
     State.player.x, State.player.y,
     player_size, player_size, gfx.COLOR_BLACK
   )
+
+  -- FIRING (player!)
+  for _, bullet in ipairs(State.player.bullets) do
+    gfx.rect_fill(bullet.x, bullet.y,
+      player_bullet_w, player_bullet_h, gfx.COLOR_LIGHT_GRAY)
+  end
 end
