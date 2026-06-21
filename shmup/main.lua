@@ -144,10 +144,17 @@ local function update_player_bullets(dt)
       if util.rect_overlap(
             { x = bullet.x, y = bullet.y,
               w = player_bullet_w, h = player_bullet_h },
-            enemy) then
+            enemy) and enemy.hp > 0
+      then
         bullet.dead = true
         enemy.hp -= 1
         enemy.flash_timer = hit_flash_time
+
+        -- This check happens here to make sure the score is only counted
+        -- the first time health reaches 0
+        if enemy.hp <= 0 then
+          State.score += 100
+        end
       end
     end
 
@@ -260,6 +267,7 @@ function _init()
     game_over = false,
     current_wave = 0,
     timer = 60,
+    score = 0,
   }
 end
 
@@ -334,20 +342,18 @@ function _draw(dt)
       enemy_bullet_size, enemy_bullet_size, gfx.COLOR_BLUE)
   end
 
-  if State.game_over then
-    gfx.text("GAME OVER", 10, 10, gfx.COLOR_BLACK)
-    gfx.text("Press " .. input.mapping_for(input.BTN1) .. " to restart!",
-      10, 32, gfx.COLOR_BLACK)
-  end
-
+  -- Things got a little funky here in the tutorial so I cleaned up the code
+  -- (overlaid text etc)
   gfx.text(string.format("%.2f", State.timer), GAME_W / 2 - 16, 10, gfx.COLOR_BLACK)
+  gfx.text("Score: " .. State.score, 10, 10, gfx.COLOR_BLACK)
+  gfx.text("Wave: " .. State.current_wave, 10, 30, gfx.COLOR_BLACK)
   if State.game_over then
     if State.timer == 0 then
-      gfx.text("TIME OUT", 10, 10, gfx.COLOR_BLACK)
+      gfx.text("TIME OUT", 10, 60, gfx.COLOR_BLACK)
     else
-      gfx.text("GAME OVER", 10, 10, gfx.COLOR_BLACK)
+      gfx.text("GAME OVER", 10, 60, gfx.COLOR_BLACK)
     end
     gfx.text("Press " .. input.mapping_for(input.BTN1) .. " to restart!",
-      10, 32, gfx.COLOR_BLACK)
+      10, 80, gfx.COLOR_BLACK)
   end
 end
