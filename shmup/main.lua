@@ -9,6 +9,31 @@ local player_bullet_h = 10
 local hit_flash_time = 0.2 -- secs
 local enemy_bullet_size = 12
 
+-- Wave spawning
+local GAME_W = 320
+local GAME_H = 320
+local WAVES = {
+  {
+    { 72,  -20 },
+    { 112, -60 },
+    { 200, -100 },
+    { 240, -140 },
+  },
+  {
+    { 72,           -20 },
+    { 100,          -60 },
+    { GAME_W - 72,  -20 },
+    { GAME_W - 100, -60 },
+  },
+  {
+    { 72,  -20 },
+    { 102, -40 },
+    { 132, -60 },
+    { 162, -80 },
+  },
+  -- add more waves here youself!
+}
+
 ---@class Player
 ---@field x number
 ---@field y number
@@ -69,37 +94,8 @@ local function init_enemy(x, y)
   }
 end
 
-function _config()
-  ---@type Usagi.Config
-  return {
-    name = "Shmup",
-    game_id = "com.ceigey.shmuptutorial"
-  }
-end
-
-function _init()
-  -- Live reload preserves globals across saved edits but resets locals.
-  -- Stash mutable game state in a capitalized global like `State` so it
-  -- survives reloads; F5 calls _init again to reset.
-  State = {
-    player = {
-      x = usagi.GAME_W / 2 - player_size / 2,
-      y = usagi.GAME_H - 60,
-      bullets = {},
-    },
-    enemies = {
-      init_enemy(72, -20),
-      init_enemy(usagi.GAME_W - 72, -20),
-      init_enemy(usagi.GAME_W / 2, -60),
-    },
-    enemy_bullets = {},
-  }
-end
-
----update state each frame before draw
----@param dt integer -- delta time: seconds since last frame
-function _update(dt)
-  -- PLAYER MOVEMENT
+---@param dt integer
+local function update_player_move(dt)
   local input_delta = { x = 0, y = 0 }
   if input.held(input.UP) then
     input_delta.y -= 1
@@ -118,8 +114,9 @@ function _update(dt)
   State.player.y += normalized_input.y * player_speed * dt
   State.player.x = util.clamp(State.player.x, 0, usagi.GAME_W - player_size)
   State.player.y = util.clamp(State.player.y, 0, usagi.GAME_H - player_size)
+end
 
-  -- FIRING CONTROLS
+local function update_player_fire(dt)
   fire_timer -= dt
 
   if fire_timer <= 0 and input.held(input.BTN1) then
@@ -133,14 +130,15 @@ function _update(dt)
       { x = State.player.x + player_size, y = bul_y })
     fire_timer = fire_delay
   end
+end
 
-  -- BULLET MOVEMENT, COLLISIONS
+---@param dt integer
+local function update_player_bullets(dt)
   for i = #State.player.bullets, 1, -1 do
     local bullet = State.player.bullets[i]
     -- move the bullet upward
     bullet.y -= bullet_speed * dt
 
-    -- ENEMY COLLISIONS
     -- check if the bullet has overlapped with any of the enemies
     for _, enemy in ipairs(State.enemies) do
       if util.rect_overlap(
@@ -154,13 +152,14 @@ function _update(dt)
     end
 
     -- remove bullets that have flown off the top of the screen
-    -- TODO: Review if/how bullet pooling can be done
     if bullet.y < -player_bullet_h or bullet.dead then
       table.remove(State.player.bullets, i)
     end
   end
+end
 
-  -- ENEMY MOVEMENT, FIRING, HEALTH
+---@param dt integer
+local function update_enemies(dt)
   for i = #State.enemies, 1, -1 do
     local enemy = State.enemies[i]
 
@@ -170,7 +169,6 @@ function _update(dt)
       enemy.flash_timer = enemy.flash_timer - dt
     end
 
-    -- LET ENEMIES FIRE (trigonometry)
     enemy.fire_timer -= dt
     if enemy.fire_timer <= 0 and enemy.shots_fired < enemy.shots_limit then
       local ex = enemy.x + enemy.w / 2 - enemy_bullet_size / 2
@@ -199,24 +197,10 @@ function _update(dt)
       table.remove(State.enemies, i)
     end
   end
+end
 
-  -- SPAWN NEW ENEMIES
-  if #State.enemies == 0 then
-    table.insert(
-      State.enemies,
-      init_enemy(72, -20)
-    )
-    table.insert(
-      State.enemies,
-      init_enemy(usagi.GAME_W - 72, -20)
-    )
-    table.insert(
-      State.enemies,
-      init_enemy(usagi.GAME_W / 2, -60)
-    )
-  end
-
-  -- ENEMY BULLETS LOOP
+---@param dt integer
+local function update_enemy_bullets(dt)
   for i = #State.enemy_bullets, 1, -1 do
     local bullet = State.enemy_bullets[i]
     local speed = 120
@@ -228,11 +212,79 @@ function _update(dt)
           get_player_hitbox(State.player)
         ) then
       bullet.dead = true
+      State.game_over = true
+      effect.flash(0.4, gfx.COLOR_WHITE)
+      effect.screen_shake(0.8, 2)
     end
 
     if bullet.y > usagi.GAME_H or bullet.dead then
       table.remove(State.enemy_bullets, i)
     end
+  end
+end
+
+local function try_spawn_enemies()
+  if #State.enemies == 0 and State.current_wave < #WAVES then
+    State.current_wave += 1
+
+    State.enemies = {}
+    for _, enemy in ipairs(WAVES[State.current_wave]) do
+      table.insert(State.enemies, init_enemy(enemy[1], enemy[2]))
+    end
+  end
+end
+
+
+function _config()
+  ---@type Usagi.Config
+  return {
+    name = "Shmup",
+    game_id = "com.ceigey.shmuptutorial",
+    game_width = GAME_W,
+    game_height = GAME_H,
+  }
+end
+
+function _init()
+  -- Live reload preserves globals across saved edits but resets locals.
+  -- Stash mutable game state in a capitalized global like `State` so it
+  -- survives reloads; F5 calls _init again to reset.
+  State = {
+    player = {
+      x = usagi.GAME_W / 2 - player_size / 2,
+      y = usagi.GAME_H - 60,
+      bullets = {},
+    },
+    enemies = {},
+    enemy_bullets = {},
+    game_over = false,
+    current_wave = 0,
+    timer = 60,
+  }
+end
+
+---update state each frame before draw
+---@param dt integer -- delta time: seconds since last frame
+function _update(dt)
+  -- "if not try_game_over() ?"
+  if State.game_over then
+    if input.pressed(input.BTN1) then
+      _init()
+    end
+  else
+    -- "update_timer(dt)"
+    State.timer -= dt
+    State.timer = math.max(State.timer, 0)
+    if State.timer == 0 then
+      State.game_over = true
+    end
+
+    update_player_move(dt)
+    update_player_fire(dt)
+    update_player_bullets(dt)
+    update_enemies(dt)
+    update_enemy_bullets(dt)
+    try_spawn_enemies()
   end
 end
 
@@ -249,16 +301,17 @@ function _draw(dt)
   -- Player bullets
   -- enemy
   -- bg?
-  gfx.rect_fill(
-    State.player.x, State.player.y,
-    player_size, player_size, gfx.COLOR_BLACK
-  )
-
-  local p_hitbox = get_player_hitbox(State.player)
-  gfx.rect_fill(
-    p_hitbox.x, p_hitbox.y, p_hitbox.w, p_hitbox.h,
-    gfx.COLOR_GREEN
-  )
+  if not State.game_over then
+    gfx.rect_fill(
+      State.player.x, State.player.y,
+      player_size, player_size, gfx.COLOR_BLACK
+    )
+    local p_hitbox = get_player_hitbox(State.player)
+    gfx.rect_fill(
+      p_hitbox.x, p_hitbox.y, p_hitbox.w, p_hitbox.h,
+      gfx.COLOR_WHITE
+    )
+  end
 
   -- ENEMIES (order specified by tutorial)
   for _, enemy in ipairs(State.enemies) do
@@ -279,5 +332,22 @@ function _draw(dt)
   for _, bullet in ipairs(State.enemy_bullets) do
     gfx.rect_fill(bullet.x, bullet.y,
       enemy_bullet_size, enemy_bullet_size, gfx.COLOR_BLUE)
+  end
+
+  if State.game_over then
+    gfx.text("GAME OVER", 10, 10, gfx.COLOR_BLACK)
+    gfx.text("Press " .. input.mapping_for(input.BTN1) .. " to restart!",
+      10, 32, gfx.COLOR_BLACK)
+  end
+
+  gfx.text(string.format("%.2f", State.timer), GAME_W / 2 - 16, 10, gfx.COLOR_BLACK)
+  if State.game_over then
+    if State.timer == 0 then
+      gfx.text("TIME OUT", 10, 10, gfx.COLOR_BLACK)
+    else
+      gfx.text("GAME OVER", 10, 10, gfx.COLOR_BLACK)
+    end
+    gfx.text("Press " .. input.mapping_for(input.BTN1) .. " to restart!",
+      10, 32, gfx.COLOR_BLACK)
   end
 end
