@@ -121,6 +121,7 @@ local function update_player_fire(dt)
 
   if fire_timer <= 0 and input.held(input.BTN1) then
     local bul_y = State.player.y - player_bullet_h
+    sfx.play_ex("fire", 0.25, math.random(4, 5) / 10, 0)
     -- fire 3 bullets
     table.insert(State.player.bullets,
       { x = State.player.x - player_bullet_w, y = bul_y })
@@ -146,6 +147,7 @@ local function update_player_bullets(dt)
               w = player_bullet_w, h = player_bullet_h },
             enemy) and enemy.hp > 0
       then
+        sfx.play_ex("collision", 0.2, math.random(18, 20) / 10, 0)
         bullet.dead = true
         enemy.hp -= 1
         enemy.flash_timer = hit_flash_time
@@ -153,6 +155,7 @@ local function update_player_bullets(dt)
         -- This check happens here to make sure the score is only counted
         -- the first time health reaches 0
         if enemy.hp <= 0 then
+          sfx.play_ex("scoreup", 0.75, 0.75, 0)
           State.score += 100
         end
       end
@@ -198,6 +201,7 @@ local function update_enemies(dt)
         })
       enemy.shots_fired += 1
       enemy.fire_timer = enemy.fire_delay
+      sfx.play_ex("fire", 0.5, math.random(5, 7) / 10, 0)
     end
 
     if enemy.hp <= 0 or enemy.y > usagi.GAME_H then
@@ -218,6 +222,7 @@ local function update_enemy_bullets(dt)
           { x = bullet.x, y = bullet.y, w = enemy_bullet_size, h = enemy_bullet_size },
           get_player_hitbox(State.player)
         ) then
+      sfx.play("collision")
       bullet.dead = true
       State.game_over = true
       effect.flash(0.4, gfx.COLOR_WHITE)
