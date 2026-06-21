@@ -7,7 +7,31 @@ local player_bullet_w = 4
 local player_bullet_h = 10
 -- "It’s the time in seconds that an enemy will flash then they’re hit by a bullet" - docs
 local hit_flash_time = 0.2 -- secs
+local enemy_bullet_size = 12
 
+---@class Player
+---@field x number
+---@field y number
+---@field bullets table
+
+---@class PlayerHitbox: Usagi.Rect
+---@field x number
+---@field y number
+---@field w number
+---@field h number
+
+---get player hitbox
+---@param player Player
+---@return PlayerHitbox
+local function get_player_hitbox(player)
+  local hitbox_size = 4
+  return {
+    x = player.x + player_size / 2 - hitbox_size / 2,
+    y = player.y + player_size / 2 - hitbox_size / 2,
+    w = hitbox_size,
+    h = hitbox_size,
+  }
+end
 
 ---@class Enemy: Usagi.Rect
 ---@field x number
@@ -18,6 +42,10 @@ local hit_flash_time = 0.2 -- secs
 ---@field speed number px/s
 ---@field color integer Usagi palette colour
 ---@field flash_timer integer how long left to flash for?
+---@field fire_timer number -- seconds until first shot
+---@field fire_delay number -- seconds between shots
+---@field shots_fired number
+---@field shots_limit number
 
 -- Gotta init some enemies somehow
 ---comment
@@ -33,7 +61,11 @@ local function init_enemy(x, y)
     h = 16,
     speed = 44, -- px/s
     color = gfx.COLOR_RED,
-    flash_timer = 0
+    flash_timer = 0,
+    fire_timer = 1.5,
+    fire_delay = 0.4,
+    shots_fired = 0,
+    shots_limit = 3,
   }
 end
 
@@ -59,14 +91,15 @@ function _init()
       init_enemy(72, -20),
       init_enemy(usagi.GAME_W - 72, -20),
       init_enemy(usagi.GAME_W / 2, -60),
-    }
+    },
+    enemy_bullets = {},
   }
 end
 
 ---update state each frame before draw
 ---@param dt integer -- delta time: seconds since last frame
 function _update(dt)
-  -- MOVEMENT
+  -- PLAYER MOVEMENT
   local input_delta = { x = 0, y = 0 }
   if input.held(input.UP) then
     input_delta.y -= 1
@@ -86,7 +119,7 @@ function _update(dt)
   State.player.x = util.clamp(State.player.x, 0, usagi.GAME_W - player_size)
   State.player.y = util.clamp(State.player.y, 0, usagi.GAME_H - player_size)
 
-  -- FIRING
+  -- FIRING CONTROLS
   fire_timer -= dt
 
   if fire_timer <= 0 and input.held(input.BTN1) then
@@ -101,6 +134,7 @@ function _update(dt)
     fire_timer = fire_delay
   end
 
+  -- BULLET MOVEMENT, COLLISIONS
   for i = #State.player.bullets, 1, -1 do
     local bullet = State.player.bullets[i]
     -- move the bullet upward
@@ -126,7 +160,7 @@ function _update(dt)
     end
   end
 
-  -- ENEMY MOVEMENT
+  -- ENEMY MOVEMENT, FIRING, HEALTH
   for i = #State.enemies, 1, -1 do
     local enemy = State.enemies[i]
 
@@ -134,6 +168,31 @@ function _update(dt)
 
     if enemy.flash_timer > 0 then
       enemy.flash_timer = enemy.flash_timer - dt
+    end
+
+    -- LET ENEMIES FIRE (trigonometry)
+    enemy.fire_timer -= dt
+    if enemy.fire_timer <= 0 and enemy.shots_fired < enemy.shots_limit then
+      local ex = enemy.x + enemy.w / 2 - enemy_bullet_size / 2
+      local ey = enemy.y + enemy.h
+
+      -- bullet center positions
+      local bcx = ex + enemy_bullet_size / 2
+      local bcy = ey + enemy_bullet_size / 2
+
+      local angle = math.atan(
+        (State.player.y + player_size / 2) - bcy,
+        (State.player.x + player_size / 2) - bcx
+      )
+
+      table.insert(State.enemy_bullets,
+        {
+          x = ex,
+          y = ey,
+          angle = angle,
+        })
+      enemy.shots_fired += 1
+      enemy.fire_timer = enemy.fire_delay
     end
 
     if enemy.hp <= 0 or enemy.y > usagi.GAME_H then
@@ -156,6 +215,25 @@ function _update(dt)
       init_enemy(usagi.GAME_W / 2, -60)
     )
   end
+
+  -- ENEMY BULLETS LOOP
+  for i = #State.enemy_bullets, 1, -1 do
+    local bullet = State.enemy_bullets[i]
+    local speed = 120
+    bullet.x += math.cos(bullet.angle) * speed * dt
+    bullet.y += math.sin(bullet.angle) * speed * dt
+
+    if util.rect_overlap(
+          { x = bullet.x, y = bullet.y, w = enemy_bullet_size, h = enemy_bullet_size },
+          get_player_hitbox(State.player)
+        ) then
+      bullet.dead = true
+    end
+
+    if bullet.y > usagi.GAME_H or bullet.dead then
+      table.remove(State.enemy_bullets, i)
+    end
+  end
 end
 
 ---draw each frame after update
@@ -176,6 +254,12 @@ function _draw(dt)
     player_size, player_size, gfx.COLOR_BLACK
   )
 
+  local p_hitbox = get_player_hitbox(State.player)
+  gfx.rect_fill(
+    p_hitbox.x, p_hitbox.y, p_hitbox.w, p_hitbox.h,
+    gfx.COLOR_GREEN
+  )
+
   -- ENEMIES (order specified by tutorial)
   for _, enemy in ipairs(State.enemies) do
     local color = enemy.color
@@ -189,5 +273,11 @@ function _draw(dt)
   for _, bullet in ipairs(State.player.bullets) do
     gfx.rect_fill(bullet.x, bullet.y,
       player_bullet_w, player_bullet_h, gfx.COLOR_LIGHT_GRAY)
+  end
+
+  -- ENEMY BULLETS RENDERING
+  for _, bullet in ipairs(State.enemy_bullets) do
+    gfx.rect_fill(bullet.x, bullet.y,
+      enemy_bullet_size, enemy_bullet_size, gfx.COLOR_BLUE)
   end
 end
